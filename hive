@@ -1,0 +1,166 @@
+/// external table
+
+in external tables location is must to define while creating the table
+in external table data is intact in hdfs/local directory after droping the table from hive terminal but table will be gone from the database ;
+
+in manged table we losst both structure of the data as awell as data
+
+
+////create partition table
+
+ create table orders_partition( order_id int, order_date string, order_customer_id int, order_status string) partitioned by (order_month string) row format delimited fields terminated by '|' stored as textfile;
+
+adding static partitions
+ alter table orders_partition add partition (order_month = '2014-01');
+
+--copying data into static partition
+-- load commad works  when the files being copied only have data with order_date from 2014-01
+-- using insert command
+for inserting the data into partitioned table as * first we need to check the data types of the source tables and mathc the data types of the destination table and the no. of coloums also otherwise we need to select the coloums specifically.
+
+select order_id, from_unixtime(cast(substr(order_date, 1, 10) as bigint)) order_date, order_customer_id, order_status, substr(from_unixtime(cast(substr(order_date, 1, 10) as bigint)), 1, 7) order_month from orders limit 10;
+
+now inserting the table
+insert into table orders_partition partition (order_month = '2014-01') select * from orders where order_date like '2014-01%';
+
+set hive.exec.dynamic.partition =  true
+set hive.exec.dynamic.partition.mode = nonstrict
+
+
+CREATE TABLE orders_partitioned_dynamic_strict (
+  order_id int,
+  order_date string,
+  order_customer_id int,
+  order_status string
+)
+PARTITIONED BY (order_year string, order_month string)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '|'
+STORED AS TEXTFILE;
+
+-- Make sure hive execution engine is pointing to mr (for Cloudera certifications)
+set hive.execution.engine=mr;
+
+-- Validate partition parameters
+hive.exec.dynamic.partition=true
+hive.exec.dynamic.partition.mode=strict
+
+-- If hive.exec.dynamic.partition.mode strict we need to have static partition for parent
+alter table orders_partitioned_dynamic_strict 
+  add partition (order_year='2013', order_month='01')
+      partition (order_year='2014', order_month='01');
+
+-- If hive.exec.dynamic.partition.mode nostrict, no need to add any partitions
+-- Use insert command to copy data from source table orders
+insert into table orders_partitioned_dynamic_strict partition (order_year='2014', order_month)
+select o.*, substr(order_date, 6, 2) order_month from orders o where order_date like '2014%';
+
+insert into table orders_partitioned_dynamic_strict partition (order_year='2013', order_month)
+select o.*, substr(order_date, 6, 2) order_month from orders o where order_date like '2013%';
+
+///bucketing partitioning 
+create table orders_bucket( order_id int, order_date string, order_customer_id int, order_status string) clustered by (order_id) into 16 buckets row format delimited fields terminated by '|' stored as textfile;
+
+set hive.enforce.bucketing = true;
+
+insert overwrite table orders_bucket select * from orders;
+
+//CTAS and orc file form
+
+create table 'orders_orc' row format delimited fields terminated by '|' stored as orc as select * from retail_stage.orders;
+
+/// after running this query the data is overwritten 
+insert overwrite table sashish1290_sqoop_import.orders select * from orders; 
+
+///transaction in hive(insert , updte and delete)
+limitations on updtes and delets. 
+- tables have to be bucketed
+-hive trasaction manager(set txn.manager) should point to ql.lockmgr.dbttxbmanager
+- we canot update the bucketd coloum
+
+update orders set order_status = 'updated_coloum' where order_id = 44;
+delete from orders where order_id =44;
+
+/// Sub Queries and total ordering (order by)
+
+select distinct * from (select order_id , from_unixtime(cast(substr(order_date, 1, 10) as bigint)) order_date, order_customer_id, order_status from orders) q;
+
+select order_status ,count(1) order_status_count from orders group by order_status sort by order_status_count desc;
+select order_status ,count(1) order_status_count from orders group by order_status order by order_status_count;
+
+/// convert the data from one file format to another
+
+create table department_avro (depart_id int, depart_name) stored as avro;
+
+now insert the data
+
+///denormalize data from multiple disparate data sets
+
+select d.department_name, substr(o.order_date, 1, 7) month, sum(oi.order_item_subtotal) monthly_revenue from orders o join order_items oi on o.order_id = oi.order_item_order_id join products p on oi.order_item_product_id = p.product_id join categories c on p.product_category_id = c.category_id join departments d on c.category_department_id = d.department_id where o.order_date like '2013%' group by d.department_name, substr(o.order_date, 1, 7);
+
+now we will try to demorlize the tabale to run the query faster with least join
+ 
+ create table retail_denormalized row format delimited fields terminated by '|' as select d.*, oi.*, o.order_date from orders o join order_items oi on o.order_id = oi.order_item_order_id join products p on oi.order_item_product_id = p.product_id join categories c on p.product_category_id = c.category_id join departments d on c.category_department_id = d.department_id;
+
+ now lets apply the aggregtion on denormalized tble
+
+ select department_name, substr(order_date , 1, 7) month, sum(order_item_subtotal) monthly_revenue from retail_denormalized where order_date like '2013%'  group by department_name, substr(order_date , 1, 7);
+
+subquery and count the records.
+ select count(1) from (select department_name, substr(order_date , 1, 7) month, sum(order_item_subtotal) monthly_revenue from retail_denormalized where order_date like '2013%' group by department_name, substr(order_date , 1, 7) ) q;
+
+will check later --------------
+ select department_name, substr(order_date , 1, 7) month, sum(order_item_subtotal), rank() over (partition by 1 order by order_item_subtotal desc) rownum_rnk_rev from retail_denormalized where order_date like '2013%' 
+  group by department_name, substr(order_date , 1, 7);
+
+  ///partition an existing data set according to one or more peratition keys
+  hive has only two prtitioning first prtitioning nd second bucketing in traadition RDBMS they are called as list partitioning and hash prtitioning respectively.
+
+--------why we use partitioning - suppose you have 100 gb of data collected in 10 years 10  gb per year. now if you want to fetch the record of only a particular month it will readfrom all the data of 100 gb and then give the result hence we use partitioning to reduce the time and not go entire data set. so we have to give the where condition based on the quuery.
+
+
+create table order_partitioned_static(order_id int, order_date string, order_customer_id int, order_status string) partitioned by (order_month string) row format delimited fields terminated by '|' stored as textfile;
+
+alter table order_partitioned_static add partition (order_month = '2014-01') partition (order_month = '2014-02') partition (order_month = '2014-03');
+
+insert into table order_partitioned_static
+partition (order_month = '2014-01') select * from orders where order_date like '2014-01%';
+
+insert into table order_partitioned_static partition (order_month = '2014-02') select * from orders where order_date like '2014-02%'
+
+insert into table order_partitioned_static partition (order_month = '2014-03') select * from orders where order_date like '2014-03%'
+
+
+/// dynamic partitioning 
+why we use it -> if we want to partition the data of every month of 10 years then we have to do it 120 times and every month we have to insert the data. so to overcome this we have dynamic partition
+in dynamic partitioning we have strict and non-strict mode
+
+-----------non-strict partitioning------------
+create table order_partitioned_dynamic_nonstrict(order_id int, order_date string, order_customer_id int, order_status string) partitioned by (order_month string) row format delimited fields terminated by '|' stored as textfile;
+
+set hive.exec.dynamic.partition = true
+set hive.exec.dynamic.partition.mode = nostrict
+
+insert into table order_partitioned_dynamic_nonstrict partition(order_month) select o.* , substr(order_date , 1, 7) order_month from orders o;
+
+---------strict dynamic paartitioning ------------
+it is a mixture of dynamic nonstrict and static partitioning
+
+create table order_partitioned_dynamic_strict(order_id int, order_date string, order_customer_id int, order_status string) partitioned by (order_year string, order_month string) row format delimited fields terminated by '|' stored as textfile;
+
+alter table order_partitioned_dynamic_strict add partition (order_year = '2014',  order_month = '01') partition (order_year = '2013', order_month = '01');
+
+insert into table order_partitioned_dynamic_strict partition(order_year = '2014', order_month) select o.* , substr(order_date, 6, 2) order_month from orders o where order_date like '2014%';
+
+insert into table order_partitioned_dynamic_strict partition(order_year = '2013', order_month) select o.* , substr(order_date, 6, 2) order_month from orders o where order_date like '2013%';
+
+
+////ranking 
+
+select * from (select product_name, category_name, sum(order_item_quantity) total_quantity from order_items oi join products p on oi.order_item_product_id = p.product_id join categories c on c.category_id = p.product_category_id group by product_name, category_name order by total_quantity desc) q limit 5;
+
+top 5 products ranks globally
+select * from (select category_name, product_name, total_quantity, dense_rank() over (partition by 1 order by total_quantity desc) rnk from (select category_name, product_name, sum(order_item_quantity) total_quantity from order_items oi join products p on oi.order_item_product_id = p.product_id join categories c on c.category_id =p.product_category_id group by category_name, product_name) q) q1 where rnk<= 5;
+
+nnow compute the rank based for each category(means within each category product rank will be computed till 5 based on total_quantity only)
+
+select * from (select category_name, product_name, total_quantity, dense_rank() over (partition by category_name order by total_quantity desc) rnk from (select category_name, product_name, sum(order_item_quantity) total_quantity from order_items oi join products p on oi.order_item_product_id = p.product_id join categories c on c.category_id =p.product_category_id group by category_name, product_name) q) q1 where rnk<= 5;

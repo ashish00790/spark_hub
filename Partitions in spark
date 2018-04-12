@@ -1,0 +1,81 @@
+
+import org.apache.spark.HashPartitioner
+
+scala> val textFile = sc.textFile("file:///home/kiran/partitioning_wc")
+ 
+textFile: org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[29] at textFile at <console>:16
+ 
+scala> val counts = textFile.flatMap(line => line.split(" ")).map(word => (word, 1)).partitionBy(new HashPartitioner(10))
+ 
+counts: org.apache.spark.rdd.RDD[(String, Int)] = ShuffledRDD[32] at partitionBy at <console>:18
+ 
+scala> counts.reduceByKey(_+_).saveAsTextFile("/home/kiran/partition_spark/hash")
+
+Note: If you use collect action to view the result then it will collect the output from all the partitions and send it to the master. Sometimes this might cause OutOfMemory exception also we cannot see the partition files. So it is better to save the output in a file.
+
+scala> val textFile = sc.textFile("file:///home/kiran/partitioning_wc")
+ 
+textFile: org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[41] at textFile at <console>:17
+ 
+scala> val counts = textFile.flatMap(line => line.split(" ")).map(word => (word, 1))
+ 
+counts: org.apache.spark.rdd.RDD[(String, Int)] = MapPartitionsRDD[43] at map at <console>:19
+ 
+scala> val range = counts.partitionBy(new RangePartitioner(10,counts))
+ 
+range: org.apache.spark.rdd.RDD[(String, Int)] = ShuffledRDD[46] at partitionBy at <console>:21
+ 
+scala> range.reduceByKey(_+_).saveAsTextFile("/home/kiran/partition_spark/range")
+
+bove are the results of word count operation performed on 10 partitioned files in parallel. So we have got 10 output files. In these 10 files, word count operation is performed among themselves and their respective results are stored accordingly.
+
+---------------------customs partitions
+
+class CustomPartitioner(numParts: Int) extends Partitioner {
+ override def numPartitions: Int = numParts
+ override def getPartition(key: Any): Int =
+ {
+       if(key.toString.equals("AcadGild")){
+    0
+ }else{
+    1
+}
+}
+ 
+ override def equals(AcadGild: Any): Boolean = AcadGild match
+ {
+ case test: CustomPartitioner =>
+ test.numPartitions == numPartitions
+ case _ =>
+ false
+ }
+}
+Custom partitioner mainly needs these things
+
+numPartitions: Int, it takes the number of partitions that needs to be created.
+
+gerPartition(key: Any): Int, this method will return the particular key to the specified partition ID which ranges from 0 to numPartitions-1 for a given key.
+
+Equals(): is the normal java equality method used to compare two objects, this method will test your partitioner object against other objects of itself then it decides whether two of your RDDs are Partitioned in the same way or not.
+
+In the above custom partitioner program, in the getPartition method we have given a condition that if the key is AcadGild then it should go into the 1st partition i.e., partition 0 else it should go into the 2nd partition.
+
+Let us compile this custom partitioner class and use it in our word count program. Here is the code for wordcount program using our custom partitioner.
+
+scala> val textFile = sc.textFile("file:///home/kiran/partitioning_wc")
+ 
+textFile: org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[119] at textFile at <console>:18
+ 
+scala> val counts = textFile.flatMap(line => line.split(" ")).map(word => (word, 1))
+ 
+counts: org.apache.spark.rdd.RDD[(String, Int)] = MapPartitionsRDD[121] at map at <console>:20
+ 
+scala> val range = counts.partitionBy(new CustomPartitioner(2))
+ 
+range: org.apache.spark.rdd.RDD[(String, Int)] = ShuffledRDD[122] at partitionBy at <console>:23
+ 
+scala> range.reduceByKey(_+_).saveAsTextFile("/home/kiran/partition_spark/custom")
+
+Let us now check for the output in the specified folder. According to our custom partitioner, the output should be partitioned in 2 files where in the first file only AcadGild should be present. Let us check for the same. So here is our final output after partitioning.
+
+AcadGild is present in the separate partition. So we have successfully executed our custom partitioner in Spark.

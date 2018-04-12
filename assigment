@@ -1,0 +1,82 @@
+Write a function that that will insert data type of double into a file and ensure that elements have evenly distributed the values. 
+The function should take two arguments: N (Number of elements) and the full name of the file (ie fully qualified path).
+ 
+1. Create a file with 50,000 elements of data type double using the function you have created as stated earlier.
+///////////////////////
+import java.io.File
+import java.io.PrintWriter
+import scala.io.Source
+
+def func(N : Int, path: String ) =  {
+var a : Double = 0.0
+val writer_File = new PrintWriter(new File(path))
+for (i <- 1 to N) {
+writer_File.write(String.valueOf(a))
+a = a+1
+writer_File.write(" ")
+}
+writer_File.close()
+}
+
+
+func(50000, "E:/use2.csv")
+
+val raw_output = scala.io.Source.fromFile("E:/use2.csv").take(10).foreach(println).getLines.toList
+
+val raw_rdd = sc.parallize(raw_output)
+val out_count= raw_rdd.flatMap(s => s.split(","))
+val out_sum =  out_count.map(_.toDouble).sum
+val output_average = out_sum/out_sum
+
+
+
+Read the file created earlier, read into RDD and compute the average and convert the double into Integer find the sum of Integer. (use scala with spark without using data frame and dataset) 
+/////////
+val out_sum2 =  out_count.map(_.toDouble).map(_.toInt).sum
+
+
+ Rewrite the program for Question no 2 by using Dataframe and Dataset.
+////////
+
+import org.aache.spark.sql.DataFrame
+import org.apache.spark.sql.types._
+
+val spark = SparkSession.builder().getOrCreate()
+val raw_DF = sprak.read.option("delimiter", ",").csv("E:/use2.csv")
+
+val out_count= raw_DF.rdd.flatMap(s => s.split(","))
+val out_sum =  out_count.map(_.toDouble).sum
+val output_average = out_sum/out_sum
+
+
+Using a DataFrame create a random sample of about 100 elements from the file created.
+////////////
+Note /:- I din't understand the question.may be you are asking to use "sample" and "util.random" package. 
+
+  arrayIndex(8, List(2,3,5,7,4,9))
+  def  arrayIndex(i :Int , l : List[Int]) : Int = {
+   val a : Int = 0
+   val b :  Int = 0
+   for(a <- 0 until l.length - 1) {
+    var first = l(a)
+   for(b <- 0 until l.length - 1) {
+   var second = l(b)
+   var total = 0
+
+   total = first + second
+   if(i == total) 
+   return total
+    }
+    }
+    }
+  
+ def test(z: Array[String]) = {
+
+  for (i <- 0 until a.length) {
+    println(s"$i is ${a(i)}")
+}
+}
+test(Array("apple", "banana", "orange"))
+val a = Array("apple", "banana", "orange")
+  
+  2,3,5,7,4,9

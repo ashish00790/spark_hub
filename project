@@ -1,0 +1,129 @@
+spark-shell --master yarn --conf spark.ui.port=12654
+
+val crimeData = sc.textFile("/public/crime/csv")
+val header =  crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(crime => crime != header)
+val rec = crimeDataWithoutHeader.first
+val distinctDates = crimeDataWithoutHeader.map(crime => crime.split(",")(2).split(" ")(0)).distinct.collect.sorted
+
+// now we need this ((month ->YYYYMM, crime_type), 1)
+
+
+val t = ((rec.split(",")(2).split(" ")(0), rec.split(",")(5)), 1)
+// applied logic on first data row 
+val t =  {
+	val r = rec.split(",")
+	val d = r(2).split(" ")(0)
+	val m = d.split("/")(2) + d.split("/")(0)
+	((m.toInt, r(5)), 1)
+}
+// now apply the logic on data
+
+val criminalRecordWithMonthAndType = crimeDataWithoutHeader.map(rec => {val r = rec.split(",")
+	val d = r(2).split(" ")(0)
+	val m = d.split("/")(2) + d.split("/")(0)
+	((m.toInt, r(5)), 1)})
+
+val crimeCountPerMonthPerType = criminalRecordWithMonthAndType.reduceByKey((total, value) => total + value)
+
+val crimeCountPerMonthPerTypeSorted = crimeCountPerMonthPerType.map(rec => ((rec._1._1, -rec._2), rec._1._1 + "\t" + rec._2 + "\t" + rec._1._2)).sortByKey().map(rec => rec._2)
+
+crimeCountPerMonthPerTypeSorted.saveAsTextFile("/user/sashish1290/solutions/solution01/crimes_by_type_by_month", classOf[org.apache.hadoop.io.compress.GzipCodec])
+
+//if we want to save it as one or two file use coalesce
+
+crimeCountPerMonthPerTypeSorted.coalesce(1).saveAsTextFile("/user/sashish1290/solutions/solution01/crimes_by_type_by_month", classOf[org.apache.hadoop.io.compress.GzipCodec])
+ 
+ //now unzip and extract to txtformat 
+ hadoop fs -cat /user/sashish1290/solutions/solution01/crimes_by_type_by_month/part-00000.gz | gzip -d | hadoop fs -put - /user/sashish1290/solutions/solution01/crimes_by_type_by_month/part.txt
+
+
+ //////// Solution usning data frame
+val crimeData = sc.textFile("/public/crime/csv")
+val header = crimeData.first
+val crimeDataWithoutHeader = crimeData.filter(cR => cR != header)
+
+val crimeDataWithDateAndTypeDF = crimeDataWithoutHeader.map(rec => (rec.split(",")(2), rec.split(",")(5))).toDF("crime_date", "crime_type")
+
+crimeDataWithDateAndTypeDF.registerTempTable("Crime_data")
+
+val crimeCountPerMonthPerType = sqlContext.sql("select cast(concat(substr(crime_date, 7, 4), substr(crime_date, 0, 2))as Int) crime_month, " + "count(1) crime_count_per_month_per_type, " + "crime_type " + " from crime_data " + " group by cast(concat(substr(crime_date, 7, 4), substr(crime_date, 0, 2))as Int), crime_type " + " order by crime_month, crime_count_per_month_per_type desc")
+
+crimeCountPerMonthPerType.rdd.map(rec => rec.mkString("\t")).take(10).foreach(println)
+
+crimeCountPerMonthPerType.rdd.map(rec => rec.mkString("\t")).saveAsTextFile("/user/sashish1290/solutions/solution01/crimes_by_type_by_month", classOf[org.apache.hadoop.io.compress.GzipCodec])
+
+crimeCountPerMonthPerType.rdd.map(rec => rec.mkString("\t")).coalesec(1).saveAsTextFile("/user/sashish1290/solutions/solution01/crimes_by_type_by_month", classOf[org.apache.hadoop.io.compress.GzipCodec])
+
+val ouput = sc.textFile("/user/sashish1290/solutions/solution01/crimes_by_type_by_month")
+
+
+
+
+--------------------------------------------------------------------
+//Get inactive customers using Core API
+import scala.io.Source // parallelize is used to convert a typical collection into RDD
+
+val ordersRaw = scala.io.Source.fromFile("/data/retail_db/orders/part-00000").getLines.toList
+val orders = sc.parallelize(ordersRaw)
+
+val customersRaw = scala.io.Source.fromFile("/data/retail_db/customers/part-00000").getLines.toList
+val customers = sc.parallelize(customersRaw)
+
+val orderMap = orders.map(order => (order.split(",")(2).toInt, 1))
+val customersMap = customers.map(c => (c.split(",")(0).toInt, (c.split(",")(2), c.split(",")(1))))
+val customersLeftOuterJoinOrders = customersMap.leftOuterJoin(orderMap) 
+
+
+val inactiveCustomer = customersLeftOuterJoinOrders.filter(rec => rec._2._2 == None).map(rec => rec._2)
+
+val inactiveCustomerSorted = inactiveCustomer.sortByKey()
+
+inactiveCustomerSorted.map(rec => rec._1._1 + "," + rec._1._2).saveAsTextFile("/user/sashish1290/solutions/solution02/inactive_customers")
+
+sc.textFile("/user/sashish1290/solutions/solution02/inactive_customers").take(10).foreach(println)
+
+/////// same problem with sql and dataframes
+
+val ordersRaw = scala.io.Source.fromFile("/data/retail_db/orders/part-00000").getLines.toList
+val orders = sc.parallelize(ordersRaw)
+
+val customersRaw = scala.io.Source.fromFile("/data/retail_db/customers/part-00000").getLines.toList
+val customers = sc.parallelize(customersRaw)
+
+val ordersDF = orders.map(order => order.split(",")(2).toInt).toDF("order_customer_id")
+
+val  customersDF = customers.map(c => (c.split(",")(0).toInt, c.split(",")(1), c.split(",")(2))).toDF("customer_id" , "customer_fname", "customer_lname")
+
+ordersDF.registerTempTable("orders_dg")
+customersDF.registerTempTable("customers_dg")
+
+sqlContext.setConf("spark.sql.shuffle.partitions", 1)
+sqlContext.sql("select customer_fname, customer_lname from customers left outer join orders on customer_id = order_customer_id where order_customer_id is null order by customer_lname, customer_fname" ).rdd.map(rec => rec.mkString(",")).saveAsTextFile("/user/sashish1290/solutions/solution02/inactive_customers")
+
+//same query using df api
+import org.apache.spark.sql.DataFrame
+customersDF.join(ordersDF, $"customer_id" === $"order_customer_id", "right_outer").where($"order_customer_id" < 5).orderBy($"customer_fname" ,$"customer_lname").show()
+
+
+
+--------------------//////////////------------------
+Get top 3 crime types based on number of incidents in residence area
+
+val rawdata = sc.textFile("/public/crime/csv/crime_data.csv")
+
+val crimeDF = rawdata.map(a => (a.split(",")(5), a.split(",")(7), a.split(",")(1))).toDF("Crime_type", "Location", "Case_number")  
+
+crimeDF.registerTempTable("crime_data")
+
+sqlContext.setConf("spark.sql.shuffle.partitions", "4")
+val output = sqlContext.sql(" select *  from (select Crime_type, Location, count(Case_number) Incident_Count, row_number() over (order by count(Case_number) desc) crime_rank from (select * from crime_data where Location > 'Location Description') q where Location == 'RESIDENCE' group by Crime_type, Location) p where crime_rank < 5").show()
+
+
+
+elif(i%5):
+        print 'Buzz'
+    elif(i%3 && i%5):
+        print 'FizzBuzz'
+    else
+        print i

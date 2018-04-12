@@ -1,0 +1,88 @@
+first make dir for flume
+flume_demo
+the a conf file to set the source and sink
+vi example.conf
+# example.conf: A single-node Flume configuration
+
+# Name the components on this agent
+a1.sources = r1
+a1.sinks = k1
+a1.channels = c1
+
+# Describe/configure the source
+a1.sources.r1.type = netcat
+a1.sources.r1.bind = localhost
+a1.sources.r1.port = 44444
+
+# Describe the sink
+a1.sinks.k1.type = logger
+
+# Use a channel which buffers events in memory
+a1.channels.c1.type = memory
+a1.channels.c1.capacity = 1000
+a1.channels.c1.transactionCapacity = 100
+
+# Bind the source and sink to the channel
+a1.sources.r1.channels = c1
+a1.sinks.k1.channel = c1
+
+save the file
+
+now run the webserver 
+flume-ng agent --name a1 --conf-file /home/sashish1290/flume_demo/example.conf
+
+check the webserver logs by opening the another cygwin 
+type 
+telnet localhost 44444
+
+how are you 
+
+
+//get the data from webserver logs into hdfs
+source - exec
+sink -hdfs
+channel - memory
+//source intro
+goto the dircetory to chekc the gen log for generating the log and inserting into the flume
+cd /opt/gen_logs/logs 
+access the file tail -F access.log
+[sashish1290@gw03 ~]$ cd flume_demo
+[sashish1290@gw03 flume_demo]$ ls -ltr
+total 4
+-rw-r--r-- 1 sashish1290 students 544 Mar 12 01:46 example.conf
+[sashish1290@gw03 flume_demo]$ mkdir wslogstohdfs
+[sashish1290@gw03 flume_demo]$ cp example.conf wslogshdfs/
+cp: cannot create regular file ‘wslogshdfs/’: Not a directory
+[sashish1290@gw03 flume_demo]$ cp example.conf wslogstohdfs/
+[sashish1290@gw03 flume_demo]$ mv example.conf wshdfs.conf
+[sashish1290@gw03 flume_demo]$ vi wshdfs.conf
+change agent  from a1 to wh source from r1 to ws source type netcat to exec and source command to tail -F /opt/gen_logs/logs/access.log
+now launch the agent
+flume-ng agent -n wh -f /home/sashish1290/flume_demo/wslogstohdfs/wshdfs.conf
+
+// sink intro
+change the wshdfs.conf file respective to sink
+use hdfs sink and name of sink is hd
+type =hdfs
+wh.sinks.hd.hdfs.path = hdfs://nn01.itversity.com:8020/user/sashish1290/flume_demo
+now run the agent
+flume-ng agent -n wh -f /home/sashish1290/flume_demo/wslogstohdfs/wshdfs.conf
+
+// sink customization
+open the wshdfs.conf file
+wh.sinks.hd.type = hdfs
+wh.sinks.hd.hdfs.path = hdfs://nn01.itversity.com:8020/user/sashish1290/flume_demo
+
+wh.sinks.hd.hdfs.filePrefix = FlumeDemo
+wh.sinks.hd.hdfs.fileSuffix = .txt
+wh.sinks.hd.hdfs.rollInterval = 120
+wh.sinks.hd.hdfs.rollSize = 1048576
+wh.sinks.hd.hdfs.rollCount = 100
+wh.sinks.hd.hdfs.fileType = DataStream
+ now run the agent 
+ flume-ng agent -n wh -f /home/sashish1290/flume_demo/wslogstohdfs/wshdfs.conf
+
+ // memory channel
+
+
+

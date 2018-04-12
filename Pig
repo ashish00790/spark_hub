@@ -1,0 +1,261 @@
+//write and execute pig latin script
+
+Bag :- A collection of tuples
+
+create a file  in pig_demo in local file system
+moved into hdfs
+load_data = load '/user/sashish1290/pig_demo.txt';
+dump load_data;
+
+///word count
+-1- process the file which have the data
+2- process each line and tokenize to generate words seprately
+3- group the word
+4- on the group we have to  apply count function
+lines = LOAD '/user/sashish1290/pig_demo.txt' using PigStorage() AS (line:chararray);
+describe lines;
+explain lines;
+words = FOREACH lines GENERATE FLATTEN(TOKENIZE(line)) AS word;
+dump words;
+grouped = group words by word;
+describe grouped;
+dump grouped;
+wordcount = FOREACH grouped GENERATE group, COUNT(words);
+
+//load data to pig relation without schema 
+first load data to hdfs using sqoop from my sql
+sqoop import-all-tables \
+ -m 12 \
+  --connect jdbc:mysql://ms.itversity.com:3306/retail_db \
+  --username retail_user \
+  --password itversity \
+  --warehouse-dir /user/sashish1290/sqoop_import/
+
+  check the table column
+  fs -cat /user/sashish1290/sqoop_import/departments/*
+
+  departments =  LOAD '/user/sashish1290/sqoop_import/departments' using PigStorage(',');
+
+process data wihout schema , use positional schema
+
+  department_id = FOREACH departments GENERATE (int) $0;
+  describe department_id;
+  dump department_id;
+
+  /// load data to relation with schema
+  departments = LOAD '/user/sashish1290/sqoop_import/departments' using PigStorage(',') AS (department_id: int, department_name: chararray);
+  department_id = FOREACH departments GENERATE department_id;
+  dump department_id;
+
+  ///load data from a hive into pig relation
+  to access the data from hive tables we need to use Hcatalog to run pig
+
+  pig -useHCatalog /---- to connect to the hive metastore 
+
+  order_details = LOAD 'sashish1290_sqoop_import.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();  
+  it will take the schema of the hive table if we don't describe specifically.
+  order_ids = FOREACH order_details GENERATE order_id;
+  order_ids_limit = LIMIT order_ids 10;  //  to show the limited data
+  dump order_ids_limit;
+
+  ///transform to match hive schema
+
+  order_items = LOAD 'hdfs://nn01.itversity.com:8020/apps/hive/warehouse/sashish1290_sqoop_import.db/order_items' USING PigStorage('\u0001') AS (order_item_id: int, order_item_order_id: int, order_item_product_id: int, order_item_quantity: int, order_item_subtotal: float, order_item_product_price: float);
+
+  order_item_sub = FOREACH order_items GENERATE order_item_id, order_item_subtotal;
+  dump order_item_sub;
+
+  ///group the data of one or more pig relations - to get count of all rows
+
+  order_items = LOAD 'sashish1290_sqoop_import.order_items' USING org.apache.hive.hcatalog.pig.HCatLoader();
+
+  if there is a header in the table then filterout the header 
+  order_details_header = FILTER order_details BY order_id != 'or_id';
+  validate by dump command
+
+  order_items_group = GROUP order_items ALL;
+
+  order_items_count = FOREACH order_items_group GENERATE COUNT_STAR(order_items) AS cnt;
+  dump order_items_count;
+
+  order_items_null = FILTER order_items BY order_item_product_id is null;
+
+  order_items_null_group = GROUP order_items_null ALL;
+
+  order_item_null_count = FOREACH order_items_null_group GENERATE COUNT_STAR(order_items_null) AS cnt;
+
+  ///group the data of one or more pig relations - group by key
+ req --- data need to group by each  order_status type
+  orders = LOAD 'sashish1290_sqoop_import.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();
+groupbystatus = GROUP orders BY order_status;
+
+groupbystatus_limit = LIMIT groupbystatus 2;
+dump groupbystatus_limit;
+
+countbyorderstatus = FOREACH groupbystatus GENERATE group, COUNT(orders) AS cnt;
+
+/// use pig to remove records with null values from a relation
+ order_details = LOAD ' hdfs://nn01.itversity.com:8020/apps/hive/warehouse/sashish1290_sqoop_import.db/orders ' USING PigStorage('\u0001');
+
+order_details_not_null = FILTER order_details BY ($3 is null);
+
+///store the data froma pig relation into a folder in hdfs(text, binary and json)
+
+departments = LOAD '/user/sashish1290/sqoop_import/departments';
+
+STORE departments INTO '/user/sashish1290/sqoop_import/departments_another';
+
+now lets change the delimiter.
+first delete the files
+fs -rm -R /user/sashish1290/sqoop_import/departments_another
+departments = LOAD '/user/sashish1290/sqoop_import/departments' USING PigStorage(',') AS (department_id: int, department_name: chararray);
+STORE departments INTO '/user/sashish1290/sqoop_import/departments_another' USING PigStorage('|');
+
+now store the data in binary format
+departmenst = LOAD '/user/sashish1290/sqoop_import/departments' USING PigStorage(',') AS (department_id: int, department_name: chararray);
+STORE departments INTO '/user/sashish1290/sqoop_import/departments_another' USING BinStorage('|');
+
+now readin the file which are as binary format
+departments_bin = LOAD '/user/sashish1290/sqoop-import/departments_another'  USING BinStorage('|');
+
+dump departments_bin;
+
+now store the data into json file format
+departmenst = LOAD '/user/sashish1290/sqoop_import/departments' USING PigStorage(',') AS (department_id: int, department_name: chararray);
+STORE departments INTO '/user/sashish1290/sqoop_import/departments_another' USING JsonStorage();
+
+/// store the data from a pig relation into hive table
+
+first create the table in hive
+create table departments (department_id int , department_name string);
+
+department = LOAD '/user/sashish1290/sqoop_import/departments' USING PigStorage(',')  AS (department_id int , department_name chararray);
+STORE departments INTO 'sashish1290_pig_demo.departments' USING org.apache.hive.hcatalog.pig.HCatStorer();
+
+same operations followed for all the relations
+
+rank row_number spark lazy evalution 
+case
+puzzels questions
+bridegs vein puzzles candles 
+hive partitions american exp
+
+/// sort the output of a pig relation
+
+categories = LOAD '/user/sashish1290/sqoop_import/categories' USING PigStorage(',');
+
+category_sort_by_dept_id = ORDER categories by $1;
+
+dump category_sort_by_dept_id;
+
+---- now laod the data without schema
+categories = LOAD 'sashish1290_retail_db_txt.categories' USING org.apache.hive.hcatalog.pig.HCatLoader();
+
+category_sort_by_dept_id = ORDER categories BY category_department_id;
+
+dump category_sort_by_dept_id;
+
+///remove the duplicates tuples of a pig relation (using distinct)
+
+orders = LOAD '/user/ashish1290/sqoop_import/retail_db/order_items' USING PigStorage(',');
+
+orderitemsubtotal = FOREACH orders GENERATE $4 as order_item_subtotal;
+orderitemsubtotal_limit = LIMIT orderitemsubtotal 10;
+orderitemsdistinct = DISTINCT orderitemsubtotal
+
+now with hive import
+orders = LOAD 'sashish1290_retail_db_txt.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();
+
+order_status = FOREACH orders GENERATE order_status;
+order_distinct = DISTINCT order_status;
+dump order_distinct;
+
+///specify the no of reduce tasks for a pigmappreduce job
+
+set default_parallel 4;
+
+if you want to set the parallel then you can set it on group clause
+
+// inner join,  outer join
+they are similar to set operations almost
+
+// joining two datasets
+problem statement -- join two tables orders and order_items and see how many orders in orders_item table.
+
+by default it is a inner join
+orders = LOAD 'sashish1290_retail_db_txt.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();
+ order_items = LOAD 'sashish1290_retail_db_txt.order_items' USING org.apache.hive.hcatalog.pig.HCatLoader();
+ordersjoin  = JOIN orders BY order_id, order_items BY order_item_order_id;
+orderlimit = LIMIT ordersjoin 10;
+
+now lets count the order_items count and match this is ordersjoin count so that the innerjoin can be verified.
+orderitemsgroupall = GROUP order_items ALL;
+orderitemscount = FOREACH orderitemsgroupall GENERATE COUNT_STAR(order_items);
+dump orderitemscount;
+ordersjoingroupall = GROUP ordersjoin ALL;
+ordersjoincount = FOREACH ordersjoingroupall GENERATE COUNT_STAR(ordersjoin);
+dump ordersjoincount;
+
+problem-statement --->now generate the revenue by each date in orderjoins
+
+orderrevenuebydate = FOREACH ordersjoin GENERATE orders::order_date, order_items::order_item_subtotal;
+orderrevenuegroup = GROUP orderrevenuebydate BY orders::order_date;
+describe orderrevenuegroup;
+as a result we get - orderrevenuegroup: {group: chararray,orderrevenuebydate: {(orders::order_date: chararray,order_items::order_item_subtotal: float)}}
+now to aggregate function on group we will use the implicit allias of tuple which is group.
+
+orderrevenueperdate = FOREACH orderrevenuegroup GENERATE group, SUM(orderrevenuebydate.order_items::order_item_subtotal) AS revenue_per_day;
+
+dump orderrevenueperdate;
+
+/// now performing outer join
+firts validate if there is any orders for which there is no order_items
+orders = LOAD 'sashish1290_retail_db_txt.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();
+order_items = LOAD 'sashish1290_retail_db_txt.order_items' USING org.apache.hive.hcatalog.pig.HCatLoader();
+
+ordersleftjoin = JOIN orders BY order_id LEFT OUTER, order_items BY order_item_order_id;
+dump ordersleftjoin
+
+filtered = FILTER ordersleftjoin BY order_items::order_item_order_id IS NULL;
+dump filtered;
+
+grouped = GROUP filtered ALL;
+groupcount = FOREACH grouped GENERATE COUNT_STAR(filtered) AS cnt;
+dump groupcount;
+
+problem statment ---> check if there is ay record in order_item but not in orders
+
+orders = LOAD 'sashish1290_retail_db_txt.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();
+order_items = LOAD 'sashish1290_retail_db_txt.order_items' USING org.apache.hive.hcatalog.pig.HCatLoader();
+
+orderitemrightjoin = JOIN orders BY order_id RIGHT OUTER, order_items BY order_item_order_id;
+filteredright = FILTER orderitemrightjoin BY orders::order_id is NULL;
+
+groupedright = GROUP filteredright ALL;
+groupedcount = FOREACH groupedright GENERATE COUNT_STAR(filteredright) AS cnt;
+
+/// perform a replicated join 
+we knw that joining task performed on reducer side. so we use replicated so that a smaller side of the table can be used at mapper side. hence the performance will be good.
+
+
+orders = LOAD 'sashish1290_retail_db_txt.orders' USING org.apache.hive.hcatalog.pig.HCatLoader();
+order_items = LOAD 'sashish1290_retail_db_txt.order_items' USING org.apache.hive.hcatalog.pig.HCatLoader();
+orderitemrightjoin = JOIN orders BY order_id , order_items BY order_item_order_id USING 'replicated';
+
+orderitemsgroupall = GROUP order_items ALL;
+orderitemscount = FOREACH orderitemsgroupall GENERATE COUNT_STAR(order_items);
+dump orderitemscount;
+ordersjoingroupall = GROUP ordersjoin ALL;
+ordersjoincount = FOREACH ordersjoingroupall GENERATE COUNT_STAR(ordersjoin);
+dump ordersjoincount;
+
+
+///user defined functions -registering jars, definig alias and invoking UDFs
+
+inbuilt predefined funcion, third part fuction pigi_bank, custom user defined function 
+
+1- register the jar party
+2- register path
+3- alias to user defined function
+
+

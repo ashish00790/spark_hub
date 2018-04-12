@@ -1,0 +1,123 @@
+we cannot use sc(spark context) to process the data in real time streaming meaning we if want data in much frequently like 2 sec.
+
+so to work with live streaming we use spark streaming 
+
+import org.apache.spark.streaming._
+import org.apache.spark.SparkConf
+
+object StreamingWordCount {
+
+ def main(args: Array[String]) {
+    val executionMode = args(0)
+	val conf = new SparkConf().setAppName("streaming word count").setMaster(executionMode)
+	val ssc = new StreamingContext(conf, Seconds(10))
+
+	val lines = ssc.socketTextStream(args(1), args(2).toInt)
+	val words = lines.flatMap(line => line.split(" "))
+	val tuples = words.map(word => (word ,1))
+	val wordCount = tuples.reduceByKey((t,v) => t + v)
+
+	wordCount.print()
+
+	ssc.start()
+	ssc.awaitTermination()
+ }
+}
+
+// get the data from web server and collect the department name 
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming. {streamingContext, Seconds}
+
+object StreamingDepartmentCount {
+	def main(args: Array[String]) {
+
+	val conf = new SparkConf().setAppName("Streaming word count").setMaster(args(0))
+	val ssc = new StreamingContext(conf, Seconds(30))
+
+	val messages = ssc.socketTextStream(args(1), args(2).toInt)
+	val departmentMessage = messages.filter(msg => {val endPoint = msg.split(" ")(6)endPoint.split("/")(1) == "department"})
+	val departments = departmentMessage.map(rec => {val endPoint = rec.split(" ")(6)(endPoint.split("/")(2), 1)})
+	val departmentTraffic = departments.reduceByKey((total, value) => total + value)
+	departmentTraffic.saveAsTextFiles("/user/sashish1290/deptwisetraffic/cnt")
+	
+	ssc.start()
+	ssc.awaitTermination()
+	}
+}
+
+//spark submit commands
+spark-submit \
+> --class StreamingWordCount \
+> --master yarn \
+> --conf spark.ui.port=12567 \
+> retail_2.10-1.0.jar yarn-client gw03.itversity.com 9999
+
+
+//flume integration 
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.{StreamingContext, Seconds}
+import org.apache.spark.streaming.flume._
+
+object StreamingDepartmentCount {
+        def main(args: Array[String]) {
+          val conf = new SparkConf().
+            setAppName("Flume Streaming word count").
+            setMaster(args(0))
+          val ssc = new StreamingContext(conf, Seconds(30))
+
+          val stream = FlumeUtils.createPollingStream(ssc, args(1), args(2).toInt)
+          val messages = stream.
+            map(s => new String(s.event.getBody.array()))
+        val departmentMessages = messages.
+          filter(msg => {
+            val endPoint = msg.split(" ")(6)
+            endPoint.split("/")(1) == "department"
+           })
+        val departments = departmentMessages.
+          map(rec => {
+            val endPoint = rec.split(" ")(6)
+            (endPoint.split("/")(2), 1)
+          })
+        val departmentTraffic = departments.
+           reduceByKey((total, value) => total + value)
+     departmentTraffic.saveAsTextFiles("/user/sashish1290/deptwisetraffic/cnt")
+
+        ssc.start()
+        ssc.awaitTermination()
+        }
+}
+
+
+spark-submit \
+  --class StreamingDepartmentCount \
+  --master yarn \
+  --conf spark.ui.port=12986 \
+  --jars "/usr/hdp/2.5.0.0-1245/spark/lib/spark-streaming-flume-sink_2.10-1.6.2.jar,/usr/hdp/2.5.0.0-1245/spark/lib/spark-streaming-flume_2.10-1.6.2.jar,/usr/hdp/2.5.0.0-1245/flume/lib/commons-lang3-3.5.jar,/usr/hdp/2.5.0.0-1245/flume/lib/flume-ng-sdk-1.5.2.2.5.0.0-1245.jar" \
+  retail_2.10-1.0.jar yarn-client gw03.itversity.com 8123
+
+  //Kafka and spark streaming
+
+  import org.apache.spark.SparkConf
+  import org.apache.spark.streaming.{StreamingContext, Seconds}
+  import org.apache.spark.streaming.kafka._
+  import org.serializer.StringDecoder
+
+  object kafkaStreamingDepartmentCount {
+     def main(args: Array[String]) {
+     val conf = new SparkConf().setAppName("Streaming word count").setMaster(args(0))
+     val ssc = new StreamingContext(conf, Seconds(30))
+     
+     val kafkaParams Map[String, String]("metadata.broker.list" -> "nn01.itversity.com:6667, nn02.itversity.com:6667, rm01.itversity.com:6667")
+     val topicSet = Set("fkdemodg")
+     val stream = kafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](ssc, kafkaParams, topicSet)
+     
+     val messages = stream.map(s => s._2)
+     val departmentMessages = messages.filter(msg =>{val endpoint = msg.split(" ")(6) endpoint.split("/")(1) == "department"})
+     val departments = departmentMessages.map(rec => {val endpoint = rec.split(" ")(6)(endpoint.split("/")(2), 1)})
+     val departmentTraffic = departments.reduceByKey((element , total) => element + total)
+     departmentTraffic.saveAsTextFiles("/user/sashish1290/deptwisetraffic/cnt")
+
+     ssc.start()
+     ssc.awaitTermination()
+     }
+  }

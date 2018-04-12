@@ -1,0 +1,357 @@
+//launching the spark
+spark-shell --master yarn --conf spark.ui.port=12654  
+
+//executor memory less set
+spark-shell --master yarn \
+--conf  spark.ui.port=12654 \
+--num-executor 1 \
+--executor-memory 512M
+
+//initialize programmtically
+import org.apache.spark.{SparkConf, SparkContext}
+val conf =new SparkConf().setAppName("Daily Revenue").setMaster("yarn-client")
+val sc =new SparkContext(conf)
+sc.getConf.getAll.foreach(println)
+
+//creating RDD - validatng files from file system
+hadoop fs -ls /public/retail_db/orders
+hadoop fs -tail /public/retail_db/orders/part-00000
+
+//creating RDD using spark-shell
+spark-shell --master yarn \
+--conf spark.ui.port=12654 \
+--num-executor 1 \
+--executor-memory 512M
+
+val orders = sc.textFile("/public/retail_db/orders")
+
+//get data from local 
+val productsRaw = scala.io.Source.fromFile("/data/retail_db/products/part-00000").getLines.toList
+
+now convert this extracted data from string to RDD(because data is extracted from local file system)
+val products = sc.parallelize(productsRaw)
+
+//reading files form different API
+val ordersSDF = sqlContext.read.json("/public/retail_db_json/orders")
+then show the data
+ordersSDF.show
+orderSDF.printSchema
+ordersSDF.select("order_id", "order_date")
+
+//transformation overview
+suppose busines req --> we need top 10 products by revenue
+so we need operation row level tranofrmations
+join -> aggregation -> sorting -> ranking
+
+//string manipulation using scala APIs
+first fetch the dta and convert int RDD
+val orders = sc.textFile("/public/retail_db/orders")
+val productsRaw = scala.io.Source.fromFile("/data/retail_db/products/part-00000").getLines.toList
+
+val str = orders.first
+
+val a = str.split(",")
+a(1).contain("2013")
+val orderdate = a(1)
+orderdate.substring(0, 10)
+orderdate.replace('-', '/')
+
+//row level transformtions - map
+val orders = sc.textFile("/public/retail_db/orders")
+
+now th req -> date which i in 2013-07-25 format is tranformed into 2013025 format anfd type change from string to int
+
+val str = orders.first
+str.split(",")(1).substring(0, 10).replace("-", "").toInt
+
+now use the map
+val orderDates = orders.map((str: String) => str.split(",")(1).substring(0, 10).replace("-", "").toInt)
+orderDates.take(10).foreach(println)
+
+now we want to pair the output with order_id
+val ordersPairedRDD = orders.map(order => {
+ val o = order.split(",")
+ (o(0).toInt, o(1).substring(0, 10).replace("-", "").toInt)
+ })
+
+now for join of order table and order_items
+ val ordersItems = sc.textFile("/public/retail_db/order_items")
+ val orderItemsPairedRDD = orderItems.map(orderItem => {
+ (orderItem.split(",")(1).toInt, orderItem)
+ })
+
+
+ // row level transformaation using flatmap
+ val l = List("hello", "how are you doing", "let us perform word count", "as part f word count program" , "we will see how many timess each word repeat")
+ val l_rdd = sc.parallelize(l)
+ val l_map = l_rdd.map(ele => ele.split(" "))
+ val l_flatMap = l_rdd.flatMap(ele => ele.split(" "))
+ val l_count = l_flatMap.map(word => (word, "")).countByKey
+
+ //filtering data  two types row filtering/ vertical filtering
+
+ val orders = sc.textFile("/public/retail_db/orders")
+  orders.filter(order => order.split(",")(3) == "COMPLETE")
+
+check whether the order is completed or closed
+  val s = orders.first
+ s.contains("COMPLETE") || s.contains("CLOSED") or we can use split lso
+s.split(",")(3) == "COMPLETE" || s.split(",")(3) == "CLOSED"
+
+now check the date contain pattern 
+(s.split(",")(3) == "COMPLETE" || s.split(",")(3) == "CLOSED") && (s.split(",")(1).contains("2013-07-25"))
+
+req -> get all the orders from 2013-09 which are in closed or complete
+first we need to find out the different order status in the data
+orders.map(order => order.split(",")(3)).distinct.collect.foreach(println)
+
+val ordersFiltered = orders.filter(order => {
+  val o = order.split(",")
+  (o(3) == "COMPLETE" || o(3) == "CLOSED") && (o(1).contains("2013-09"))
+})
+ordersFiltered.take(10).foreach(println)
+ordersFiltered.count
+
+//joining Data sets-inner join
+req-> we want order date from orders and order-item_subtotal from order_item along with order-id
+val orders = sc.textFile("/public/retail_db/orders")
+val orderItems = sc.textFile("/public/retail_db/order_items")
+
+val ordersMap = orders.map(order => (order.split(",")(0).toInt , order.split(",")(1).substring(0, 10)))
+val orderItemsmap = orderItems.map(orderItem => (orderItem.split(",")(1).toInt , orderItem.split(",")(4).toFloat))
+
+val ordersjoin = ordersMap.join(orderItemsmap)
+
+// joining data sets- outer join
+req-> get all the orders which do not have corresponding entries in order items
+
+ val orders = sc.textFile("/public/retail_db/orders")
+val orderItems = sc.textFile("/public/retail_db/order_items")
+val ordersMap = orders.map(order => (order.split(",")(0).toInt , order))
+val orderItemsMap =orderItems.map(orderitem => (orderitem.split(",")(1).toInt,  orderitem))
+
+val ordersLeftOuterJoin = ordersMap.leftOuterJoin(orderItemsMap) 
+
+val ordersLeftOuterJoinFilter = ordersLeftOuterJoin.filter(order => order._2._2 == None)
+
+val ordersWithNoOrderItem = ordersLeftOuterJoinFilter.map(order => order._2._1)
+
+
+// aggregation - reducer
+now suppose we want order status key and it's count
+
+val orders = sc.textFile("/public/retail_db/orders")
+orders.map(order => (order.split(",")(3),  "")).countByKey.foreach(println)
+
+req-> we want the total revenue for 
+val orderItems = sc.textFile("/public/retail_db/order_items")
+val orderItemsRevenue = orderItems.map(oi => oi.split(",")(4).toFloat)
+orderItemsRevenue.reduce((total,revenue) => total + revenue)
+val orderItemsMaxRevenue = orderItemsRevenue.reduce((max, revenue) => {
+   if(max < revenue) revenue else max
+})
+
+
+//aggregation  - combiner
+//aggregaation - groupbykey
+req-> get reveue per order_id , get data in decsnding order by order_item_subtotal for each order_id
+val orderItems = sc.textFile("/public/retail_db/order_items")
+val orderItemsMap = orderItems.
+  map(oi => (oi.split(",")(1).toInt, oi.split(",")(4).toFloat))
+val orderItemGBK = orderItemsMap.groupByKey
+get the revenue per order id
+orderItemGBK.map(rec => (rec._1, rec._2.toList.sum)).take(10).foreach(println)
+
+
+get data in decsnding order by order_item_subtotal for each order_id
+val orderSortedbyRevenue = orderItemGBK.
+   flatMap(rec => {
+     rec._2.toList.sortBy(o => -o).map(k =>  (rec._1, k))
+   })
+
+   // aggregtions - reduceBykey use if input nd output is of different data types otherwise use reducebykey
+
+   val orderItems = sc.textFile("/public/retail_db/order_items")
+val orderItemsMap = orderItems.
+  map(oi => (oi.split(",")(1).toInt, oi.split(",")(4).toFloat))
+
+  val revenuePerOrderId = orderItemsMap.reduceByKey((total, revenue) => total + revenue)
+
+  val minRevenueperOrderId = orderItemsMap.reduceByKey((min, revenue) => if(min<revenue) revenue else min)
+
+  //aggregrtion - aggregateByKey use if input nd output is of different data types otherwise use reducebykey
+  req-> getting the total revenue of the orderid plus also get the max reveue generated by that orderid
+ val orderItems = sc.textFile("/public/retail_db/order_items")
+val orderItemsMap = orderItems.
+  map(oi => (oi.split(",")(1).toInt, oi.split(",")(4).toFloat))
+
+  val revenueAndMaxPerProductId = orderItemsMap.aggregateByKey((0.0f,0.0f))(
+  (inter, subtotal) =>(inter._1 + subtotal, if(subtotal > inter._2) subtotal else inter._2),
+  (total, inter) => (total._1 + inter._1, if(total._2 > inter._2) total._2 else inter._2))
+
+
+  //aggregation - sortByKey - by default sortbykey is ascending oreder but to descending order just pss false
+
+  val products = sc.textFile("/public/retail_db/products")
+  val productMap = products.map(product => (product.split(",")(1).toInt, product))
+  val productsSortedByCategoryId = productMap.sortByKey(false)
+
+  val productMap = products.filter(product => product.split(",")(4) != "").map(product => ((product.split(",")(1).toInt, -product.split(",")(4).toFloat), product))
+
+  val productSortedByCategoryId= productMap.sortByKey().map(rec => rec._2)
+
+  
+  //Ranking - global (details of top 10 products)
+val products = sc.textFile("/public/retail_db/products")
+val productMap = products.filter(product => product.split(",")(4) != "").map(product => (product.split(",")(4).toFloat, product))
+  val productsSortedByPrice = productMap.sortByKey(false)
+  productsSortedByPrice.take(10).foreach(println)
+
+now lets use takeorder api -- no need to apply map and sortbykey while using takeoreder 
+val products = sc.textFile("/public/retail_db/products")
+val productMap = products.filter(product => product.split(",")(4) != "").takeOrdered(10)(Ordering[Float].reverse.on(product => product.split(",")(4).toFloat)).foreach(println)
+
+//Ranking 
+req-> get top n priced products with in each product category
+val products = sc.textFile("/public/retail_db/products")
+val productMap = products.filter(product => product.split(",")(4) != "").map(product => (product.split(",")(1).toInt, product))
+after this we have 1355 records
+val productsGroupBycategory = productMap.groupByKey
+
+ after this we have data grouped by product category aand each product category have  some data so now we have only 55 records 
+
+now lets take only one row of the output and apply logic onto it to findout the top price product for that particular category then we will apply the same logic on the all category
+
+val productsIterable = productsGroupBycategory.first._2
+
+def getTopNPricedProducts(productsIterable: Iterable[String], topN: Int): Iterable[String] = {
+  val productPrices = productsIterable.map(p => p.split(",")(4).toFloat).toSet
+  val topNPrices = productPrices.toList.sortBy(p => -p).take(topN)
+
+  val productsSorted = productsIterable.toList.sortBy(product => -product.split(",")(4).toFloat)
+  val minOfTopNPrices = topNPrices.min
+
+  val topNPricedProducts = productsSorted.takeWhile(product => product.split(",")(4).toFloat >= minOfTopNPrices)
+
+  topNPricedProducts
+}
+
+
+// set operations
+
+val orders = sc.textFile("/public/retail_db/orders")
+
+req-> get the customes placed ordered between two dates
+val customers_201308 = orders.filter(order => order.split(",")(1).contains("2013-08")).map(order => order.split(",")(2).toInt)
+
+val customers_201309 = orders.filter(order => order.split(",")(1).contains("2013-09")).map(order => order.split(",")(2).toInt)
+
+get the customer who placed order in 2013 august and 2013 september
+val customers_201308_and_201309 = customers_201308.intersection(customers_201309) 
+
+get the customer who placed order in 2013 august or 2013 september
+val customers_201308_union_201309 = customers_201308.union(customers_201309)
+
+get all the cutomers who placed orders in 2013 august but not in 2013 september
+val customer_201308_minus_201309 = customers_201308.map(c => (c, 1)).leftOuterJoin(customers_201309.map(c => (c, 1))).filter(rec => rec._2._2 == None).map(rec => rec._1).distinct
+
+
+// save RDD in the text file format
+val orders = sc.textFile("/public/retail_db/orders")
+val orderCountByStatus = orders.map(order => (order.split(",")(3), 1)).reduceByKey((total, element)=> total + element)
+orderCountByStatus.map(rec => rec._1 + "\t" + rec._2).saveasTextFile("/user/sashish1290/order_count_by_status")
+to chec the data on scala console
+sc.textFile("/user/sashish1290/order_count_by_status").collect.foreach(println)
+
+//compress the data 
+first check the compression algo which are codec under etc/hadoop/conf  vi core-site.xml then type /codec
+
+orderCountByStatus.saveAsTextFile("/user/sashish1290/order_count_by_status_snappy", classOf[org.apache.hadoop.io.compress.SnappyCodec])
+sc.textFile("/user/sahish1290/order_count_by_status_snappy").collect.foreach(println)
+
+
+//saving and writing into different file format using data frame
+ val ordersDF = sqlContext.read.json("/public/retail_db_json/orders")
+ ordersDF.save("/user/sashish1290/orders_parquet", "parquet")
+ ordersDF.write.orc("/user/sashish1290/orders_orc")
+
+ sqlContext.load("/user/sashish1290/orders_parquet", "parquet").show
+ sqlContext.read.orc("/user/sashish1290/orders_orc").show
+ sqlContext.load("/user/sashish1290/orders_orc", "orc").show
+
+
+//problem statements and solution
+1- launch spark-shell
+spark-shell --master yarn --conf spark.ui.port=12654
+2-read orders and order_items
+val orders = sc.textFile("/public/retail_db/orders")
+val orderItems = sc.textFile("/public/retail_db/order_items")
+3- Filter for completed or closed orders. berfore that check that how many types of phrase of status
+ orders.map(order => order.split(",")(3)).distinct.collect.foreach(println)
+val ordersFiltered = orders.filter(order => order.split(",")(3) == "COMPLETE" || order.split(",")(3) == "CLOSED")
+ordersFiltered.take(10).foreach(println)
+
+4- convert both filtered orders and order_item to key value pairs
+val ordersMap = ordersFiltered.map(order => (order.split(",")(0).toInt, order.split(",")(1)))
+val orderItemsMap = orderItems.map(oi => (oi.split(",")(1).toInt,(oi.split(",")(2).toInt, oi.split(",")(4).toFloat)))
+ordersMap.take(10).foreach(println)
+orderItemsMap.take(10).foreach(println)
+
+5- join the two datasets
+val ordersJoin = ordersMap.join(orderItemsMap)
+ordersjoin.take(10).foreach(println)
+ordersJoin.count
+
+output so far 
+(order_id,(order_date,(order_item_product_id,order_item_subtotal)))
+(53926,(2014-06-30 00:00:00.0,(191,99.99)))
+
+6- get daily revenue per product id. to do this we need data into certain formate to apply aggregation
+
+need data as ((order_date,order_item_product_id),order_item_subtotal)) 
+val ordersJoinMap = ordersJoin.map(rec => ((rec._2._1, rec._2._2._1), rec._2._2._2))
+ordersJoinMap.take(10).foreach(println)
+
+need data as ((order_date, order_item_product_id), daily_revenue_per_product_id)
+val dailyRevenuePerProductId = ordersJoinMap.reduceByKey((revenue, order_item_subtotal) => revenue + order_item_subtotal)
+dailyRevenuePerProductId.take(10).foreach(println)
+
+7- load  products from local file system and convert into RDD "/data/retail_db/products/part-00000"
+import scala.io.source
+val productsRaw = Source.fromFile("/data/retail_db/products/part-00000").getLines.toList
+val products = sc.parallelize(productsRaw)
+products.take(10).foreach(println)
+products.count
+
+8- join daily revenue per product id with products to get daily revenue per product (by name)
+val productMap = products.map(product => (product.split(",")(0).toInt, product.split(",")(2)))
+productMap.take(10).foreach(println)
+ now to join the two datasets we need to convert the daiy revenue into a different format
+ need  revenue data as (order_product_id,(order_date, daily_revenue_per_product_id))
+ val dailyRevenuePerProductIdMap = dailyRevenuePerProductId.map(rec => (rec._1._2, (rec._1._1, rec._2)))
+ dailyRevenuePerProductIdMap.take(10).foreach(println)
+
+now we can safely join
+val dailyRevenuePerProductJoin = dailyRevenuePerProductIdMap.join(productMap)
+dailyRevenuePerProductJoin.take(10).foreach(println)
+
+so now the output so far
+(order_product_id,(order_date, daily_revenueper-product-id), product_name)
+
+9- sort the data by date in ascending order and by daily revenue per product in descendig order
+val dailyRevenuePerProductSorted = dailyRevenuePerProductJoin.map(rec => ((rec._2._1._1, -rec._2._1._2),(rec._2._1._1, rec._2._1._2, rec._2._2))).sortByKey()
+dailyRevenuePerProductSorted.take(10).foreach(println)
+
+output now -((order-date_asc, daily_revenue_per_product_id_desc),(order_date, daily-revenue_per_product, product_name))
+
+10  - get data to desired format - order_date, daily_revenue_per_product, product_name
+val dailyRevenuePerProduct = dailyRevenuePerProductSorted.map(rec => rec._2._1 + "," + rec._2._2 + "," +  rec._2._3)
+dailyRevenuePerProduct.take(10).foreach(println)
+
+11- save this output into text file
+dailyRevenuePerProduct.saveAsTextFile("/user/sashish1290/daily_revenue_txt_scala")
+sc.textFile("/user/sashish1290/daily_revenue_txt_scala").take(10).foreach(println)
+
+12- copy both from hdfs to local file system
+ hadoop fs  -get /user/sashish1290/daily_revenue_txt_scala /home/sashish1290/daily_revenue_scala
+

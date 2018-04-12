@@ -1,0 +1,225 @@
+//Working on Data frames
+
+import org.apache.spark.sql.SparkSession
+
+val spark =  SparkSession.builder().getOrCreate()
+
+----->header is used if the dataset is having a header then to say that consider frit line as header.
+inferschema is used to take the same schema as source file has and use it.
+val df = spark.read.option("header","true").option("inferSchema","true").csv("citigroup2006_2008")
+
+we can also specify name of the coloums explicitely.
+df.head(5) ---to show the first five row
+
+for(row <- df.head(5)) {
+	println(row)
+}
+df.coloums --- to show the colums names
+df.describe().show()
+df.select("Volume").show()
+df.select($"Date", $"Close")
+to add new coloum in the dataframe
+df2 = df.withcoloum("HighPlusLow", df("High") + df("Low"))
+df.printSchema()
+now renaming the coloum
+df2("HighPlusSlow").as("HPL")
+df2("HPL").show()
+
+
+
+creating the data frames by explicitly specifying the schema
+
+ this code is not working
+ val ordersRDD = scala.io.Source.fromFile("/data/retail_db/orders/part-00000").getLines.toList
+ //val schemaString = "order_id order_date order_customer_id order_status"
+ import org.apache.spark.sql.Row
+ import org.apache.spark.sql.types._
+ import org.apache.spark.sql.DataFrame
+ 
+ creating own schema
+ val schematrue = StructType(Seq (
+StructField("order_id", LongType, true) ,
+ StructField("order_date", StringType, true) ,
+ StructField("order_customer_id", LongType, true) , 
+ StructField("order_status", StringType, true)) )
+
+now creating row rdd
+  val rowRDD = sc.parallelize(ordersRDD.map(_.split(",")).map(p => Row(p(0), p(1), p(2), p(3))))
+  val df = sqlContext.createDataFrame(rowRDD, schematrue)
+  df.registerTempTable("ordersDF")
+
+
+//////////-----------Sanfrancisco data sets-----------------//////////////
+
+
+val rawdata = sc.textFile("/user/sashish1290/sanfrancisco_data/Fire_Department_Calls_for_Service.csv")
+//val rawRDD = sc.parallelize(rawdata)
+
+val rawdata = sc.textFile("C:/Users/ashish/Downloads/Fire_Department_Calls_for_Service").getLines().toList()
+
+val fireSchema = StructType((StructField("CallNUmber", IntegerType, true)) ::
+(StructField("UnitID", StringType, true)) ::
+(StructField("IncidentNumber", IntegerType, true)) ::
+(StructField("CallType", StringType, true)) ::
+(StructField("CallDate", StringType, true)) ::
+(StructField("WatchDate", StringType, true)) ::
+(StructField("ReceivedDtTm", StringType, true)) ::
+(StructField("EntryDtTm", StringType, true)) ::
+(StructField("DispatchDtTm", StringType, true)) ::
+(StructField("RisponseDtTm", StringType, true)) ::
+(StructField("onSceneDtTm", StringType, true)) ::
+(StructField("TransportDtTm", StringType, true)) ::
+(StructField("HospitalDtTm", StringType, true)) ::
+(StructField("CallFinalDisposition", StringType, true)) ::
+(StructField("AvailableDtTm", StringType, true)) ::
+(StructField("Address", StringType, true)) ::
+(StructField("City", StringType, true)) ::
+(StructField("ZipcodeofIncident", IntegerType, true)) ::
+(StructField("Battalion", StringType, true)) ::
+(StructField("StationArea", StringType, true)) ::
+(StructField("Box", StringType, true)) ::
+(StructField("OriginalPriority", StringType, true)) ::
+(StructField("Priority", StringType, true)) ::
+(StructField("FinalPriority", IntegerType, true)) ::
+(StructField("ASLUnit", BooleanType, true)) ::
+(StructField("CallTypeGroup", StringType, true)) ::
+(StructField("NumberofAlarms", IntegerType, true)) ::
+(StructField("UnitType", StringType, true)) ::
+(StructField("Unisequenceincalldispatch", IntegerType, true)) ::
+(StructField("FirePreventionDistrict", StringType, true)) ::
+(StructField("SupervisorDistrict", StringType, true)) ::
+(StructField("NeighborhoodDistrict", StringType, true)) ::
+(StructField("Location", StringType, true)) ::
+(StructField("RowID", StringType, true)) :: Nil
+)
+  
+val fireservicecallDF = spark.read.option("header" , "true").schema(fireSchema).csv("C:/Users/ashish/Downloads/Fire_Department_Calls_for_Service.csv")
+  val fireServiceCallsDF = sqlContext.createDataFrame(rawdata, fireSchema)
+
+
+val fireSchema = StructType(Seq((StructField("CallNUmber", IntegerType, true)) ,
+(StructField("UnitID", StringType, true)) ,
+(StructField("IncidentNumber", IntegerType, true)),
+(StructField("CallType", StringType, true)) ,
+(StructField("CallDate", StringType, true)) ,
+(StructField("WatchDate", StringType, true)) ,
+(StructField("ReceivedDtTm", StringType, true)) ,
+(StructField("EntryDtTm", StringType, true)) ,
+(StructField("DispatchDtTm", StringType, true)) ,
+(StructField("RisponseDtTm", StringType, true)) ,
+(StructField("onSceneDtTm", StringType, true)) ,
+(StructField("TransportDtTm", StringType, true)) ,
+(StructField("HospitalDtTm", StringType, true)) ,
+(StructField("CallFinalDisposition", StringType, true)),
+(StructField("AvailableDtTm", StringType, true)),
+(StructField("Address", StringType, true)),
+(StructField("City", StringType, true)) ,
+(StructField("ZipcodeofIncident", IntegerType, true)),
+(StructField("Battalion", StringType, true)),
+(StructField("StationArea", StringType, true)),
+(StructField("Box", StringType, true)),
+(StructField("OriginalPriority", StringType, true)),
+(StructField("Priority", StringType, true)),
+(StructField("FinalPriority", IntegerType, true)),
+(StructField("ASLUnit", BooleanType, true)),
+(StructField("CallTypeGroup", StringType, true)),
+(StructField("NumberofAlarms", IntegerType, true)),
+(StructField("UnitType", StringType, true)),
+(StructField("Unisequenceincalldispatch", IntegerType, true)),
+(StructField("FirePreventionDistrict", StringType, true)),
+(StructField("SupervisorDistrict", StringType, true)),
+(StructField("NeighborhoodDistrict", StringType, true)),
+(StructField("Location", StringType, true)),
+(StructField("RowID", StringType, true))
+))
+
+How many types of call made ?
+
+fireservicecallDF.select("CallType").show(5)
+
+How many incident of each call type were there?
+
+fireservicecallDF.select("CallType").groupBy("CallType").count().orderBy("count")
+
+
+/////////////--------------///////////////////orders and customertable//////////-_-------------
+val orderSchema = StructType(Seq((StructField("order_id", IntegerType, true)) ,
+(StructField("order_date", StringType, true)) ,
+(StructField("order_customer_id", IntegerType, true)),
+(StructField("order_status", StringType, true))) )
+
+val ordersDF = spark.read.option("header" , "true").schema(orderSchema).csv("C:/Users/ashish/Downloads/data-master (1)/data-master/retail_db/orders/part-00000")
+
+val customerSchema = StructType(Seq((StructField("order_id", IntegerType, true)) ,
+(StructField("order_date", StringType, true)) ,
+(StructField("order_customer_id", IntegerType, true)),
+(StructField("order_status", StringType, true))) )
+
+val customerSchema = StructType(Seq((StructField("customer_id", IntegerType, true)),
+(StructField("customer_fname", StringType, true)),
+(StructField("customer_lname", StringType, true)),
+(StructField("customer_email", StringType, true)),
+(StructField("customer_password", StringType, true)),
+(StructField("customer_street", StringType, true)),
+(StructField("customer_city", StringType, true)),
+(StructField("customer_state", StringType, true)),
+(StructField("customer_zipcode", IntegerType, true))
+))
+
+val customersDF = spark.read.option("header" , "true").schema(customerSchema).csv("C:/Users/ashish/Downloads/data-master (1)/data-master/retail_db/customers/part-00000")
+
+val orderitemSchema = StructType(Seq((StructField("order_item_id", IntegerType, true)),
+(StructField("order_item_order_id", IntegerType, true)),
+
+(StructField("order_item_product_id", IntegerType, true)),
+(StructField("order_item_quantity", IntegerType, true)),
+(StructField("order_item_subtotal", FloatType, true)),
+(StructField("order_item_product_price", FloatType, true))
+))
+
+val orderitemDF = spark.read.option("header" , "true").schema(orderitemSchema).csv("C:/
+s/ashish/Downloads/data-master (1)/data-master/retail_db/order_items/part-00000")
+
+ spark.sqlContext.sql("select order_id, order_date, order_status, sum(order_item_subtotal) revenue from orders join order_items on order_customer_id = order_item_order_id group by order_date, order_id, order_status").show()
+
+
+ ////---------
+ to use the schema of case class we use encoders like below
+
+ cass class Series(id: String, area: String, measure: String, title: String)
+
+ val countryDta = spark.read.schema(Encoders.product[Series].schema).option("header", true).option("delimiter", "\t").csv("/data/la.data.64.country").as[Series]
+
+ countryDta.show()
+
+ ///-----------------------
+
+ package sparksql
+
+ object NOAAData {
+ import org.apache.spark.sql.SparkSession
+ val spark = SparkSession.builder().appName("NOAA Data").getOrCreate()
+ import spark.implicits._
+
+ val data2017 = spark.read.schema(tschema).csv("E:/Tableua/2017.csv")
+ //data2017.show()
+ import org.apache.spark.sql.types._
+ val tschema = StructType(Array(
+ StructField("sid", StringType),
+ StructField("date", DateType),
+ StructField("mtype", StringType),
+ StructField("value", DoubleType)
+ ))
+
+ val data2017 = spark.read.schema(tschema).option("dateFormat", "yyyyMMdd").csv("E:/Tableua/2017.csv")
+ //data2017.show()
+
+val tmax2017 = data2017.filter($"mtype" === "TMAX").limit(1000).drop("mtype").withColumnRename("MAX")
+val tmin2017 = data2017.filter('mtype === "TMIN").limit(1000).drop("mtype").withColumnRename("MIN")
+val combinedTemps2017 = tmax2017.join(tmin2017, tmax2017("sid") === tmin2017("sid") && tmax2017("date") === tmin2017("date"))
+ --- alternative
+val combinedTemps2017 = tmax2017.join(tmin2017, Seq("sid", "date"))
+val averageTemp2017 = combinedTemps2017.select('sid, 'date, ('MAX + 'MIN)/2)
+
+data2017.schema.printTreeString()
+ }

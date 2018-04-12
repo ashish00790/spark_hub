@@ -1,0 +1,311 @@
+spark-sql --master yarn --conf spark.ui.port=12567
+
+we will be using hive interface instead spark sql
+
+// create databases and tables - text file format
+create database sashish1290_retail_db_txt;
+use sashish1290_retail_db_txt;
+
+now we want to check the hive meastore directory
+set hive.metastore.warehouse.dir;
+//create table
+output = /apps/hive/warehouse
+ create table orders (
+        order_id int,
+        order_date string,
+        order_customer_id int,
+        order_status string
+        ) row format delimited fields terminated by ','
+        stored as textfile;
+
+ // now loading the data locally
+ load data local inpath '/data/retail_db/orders' into table orders;
+load data local inpath '/data/retail_db/order_items' into table order_items;
+ create table order_items (
+         order_item_id int,
+         order_item_order_id int,
+         order_item_product_id int,
+         order_item_quantity int,
+         order_item_subtotal float,
+         order_item_product_price float
+         ) row format delimited fields terminated by ','
+         stored as textfile;
+
+  // now load data locally 
+  load data local inpath '/data/retail_db/order_items' into table order_items;
+
+  create table customers(
+      customer_id int,
+      customer_fname varchar(45),
+      customer_lname varchar(45),
+      customer_email varchar(45),
+      customer_password varchar(45),
+      customer_street varchar(255),
+      customer_city varchar(45),
+      customer_state varchar(45),
+      customer_zipcode varchar(45)
+      ) row format delimited fields terminated by ','
+      stored as textfile;
+
+    load data local inpath '/data/retail_db/customers' into table customers;
+
+  // creat tbale and store data in orc file format
+  create database sashish1290_retail_db_orc;
+use sashish1290_retail_db_orc;
+
+create table orders (
+        order_id int,
+        order_date string,
+        order_customer_id int,
+        order_status string
+        )
+        stored as orc;
+
+create table order_items (
+         order_item_id int,
+         order_item_order_id int,
+         order_item_product_id int,
+         order_item_quantity int,
+         order_item_subtotal float,
+         order_item_product_price float
+         ) 
+         stored as orc;
+
+ now insert the data from a comma seprated file into the orc file format table
+
+  insert into table orders select * from sashish1290_retail_db_txt.orders;
+  insert into table order_items select * from sashish1290_retail_db_txt.order_items;
+
+  //using spark shell run the sql queries
+  spark-shell --master yarn --conf spark.ui.port=12654 
+  sqlContext.sql("use sashish1290_retail_db_txt")
+  sql.Context.sql("select * from orders limit 10").show
+
+  // functions
+  show funtion;
+  describe funtion lenght;
+  select lenght("hello world");
+  select length(order_status) from orders limit 100;
+
+  // manipulating string
+  select 'Hello world, How are you';
+   select substr('Hello world, How are you', 14);
+   select substr('Hello world, How are you', -3);
+   select instr('Hello world, How are you', ' '); // first occurence of space
+   select instr('Hello world, How are you', 'world'); //first occurence of world
+   select cast(substr(order_date,6,2) as int) from orders limit 10;
+
+   //manipulting dates
+   select current_date;
+   select date_format(current_date, 'y');
+select date_format(current_date, 'd');
+ select day(current_date);
+select dayofmonth("2017-10-09");
+ select current_timestamp;
+select to_date(current_timestamp);
+select to_unix_timestamp(current_date);
+select to_unix_timestamp(current_timestamp);
+select from_unixtime(1520744400);
+select to_date(from_unixtime(1520744400));
+select to_date(order_date) from orders limit 10;
+select date_add(order_date, 10) from orders limit 10;
+
+// aggregate functions
+select count(1) from orders;
+select sum(order_item_subtotal) from order_items;
+select count(1) , count(distinct order_status) from orders;
+
+// function case , nvl
+ select case order_status when 'CLOSED' then 'no Action' when 'COMPLETE' then 'no Action' end from orders limit 10;
+
+select order_status,  case order_status when 'CLOSED' then 'no Action' when 'COMPLETE' then 'no Action' when 'ON_HOLD' then 'pending action' when 'PAYMEN_REVIEW' then 'pendig action' when 'PENDING' then 'pendinng ation' when 'PENDING _PAYMENT' then 'pending_action' else 'risky' end from orders limit 10;
+
+so here if the order_status is missing then you get the mentioned status otherwise the orders-status
+select nvl(order_status, 'status mmissing') from orders limit 100;
+
+same query in case is 
+select case when order_status is null then 'missing status' else order_status end from orders  limit 100;
+
+
+// row level transformation
+req- get the date in 201307 formate form orders table
+
+select concat((substr(order_date, 1, 4)), substr(order_date, 6, 2)) from orders limit 10;
+now type cast the output ito integer
+select cast(concat(substr(order_date, 1, 4), substr(order_date, 6, 2)) as int) from orders limit 10;
+
+select date_format('2013-07-25 00:00:00.0', 'YYYYMM') from orders limit 10;
+select cast(date_format('2013-07-25 00:00:00.0', 'YYYYMM') as int)from orders limit 10;
+
+// joining data from multiple tables
+select o.*, c.* from orders o, customers c where o.order_customer_id = c.customer_id limit 10;
+
+now the mordern method to join
+select o.*, c.* from orders o join customers c on o.order_customer_id = c.customer_id limit 10;
+
+inner join
+select o.*, c.* from orders o inner join customers c on o.order_customer_id = c.customer_id limit 10;
+
+left outer join
+select o.*, c.* from customers c left outer join orders o  on o.order_customer_id = c.customer_id limit 10;
+
+customers who have not placed any orders in my application.
+select * from customers c left outer join orders o on o.order_customer_id = c.customer_id where o.order_customer_id is null;
+
+select * from customers where order__customer_id not in(select distinct order_customer_id from orders)
+
+// aggregation
+req-> want to fetch revenue per order
+select o.order_id, o.order_date, o.order_status, sum(oi.order_item_subtotal) order_revenue from orders o join order_items oi on o.order_id = oi.order_item_order_id group by o.order_id, o.order_date, o.order_status;
+
+select o.order_id, o.order_date, o.order_status, sum(oi.order_item_subtotal) order_revenue from orders o join order_items oi on o.order_id = oi.order_item_order_id where o.order_status in ('COMPLETE','CLOSED') group by o.order_id, o.order_date, o.order_status;
+
+now get the revenue daily bases
+select o.order_id, round(sum(oi.order_item_subtotal)) order_revenue from orders o join order_items oi on o.order_id = oi.order_item_order_id where o.order_status in ('COMPLETE','CLOSED') group by o.order_id;
+
+//sorting the data use order by or use sort by
+select o.order_id, o.order_date, o.order_status, round(sum(oi.order_item_subtotal), 2) order_revenue from orders o join order_items oi on o.order_id = oi.order_item_order_id where o.order_status in ('COMPLETE','CLOSED') group by o.order_date, o.order_status, o.order_id  having sum(oi.order_item_subtotal) >= 1000 order by o.order_date, order_revenue desc; 
+
+//set operations perform on union all and union
+
+select 1, "Hello"
+union
+select 2, "world"
+union
+select 1, "hello"
+union
+select 2, "world";
+
+
+select 1, "Hello"
+unionall
+select 2, "world"
+unionall
+select 1, "hello"
+unionall
+select 2, "world";
+
+//analytics functions - aggregrations - 
+select o.order_id, o.order_date, o.order_status, oi.order_item_subtotal, 
+round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) order_revenue,
+oi.order_item_subtotal/round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) pct_revenue 
+from orders o join order_items oi 
+on o.order_id = oi.order_item_order_id 
+where o.order_status in ('COMPLETE','CLOSED') 
+order by o.order_date, order_revenue desc;
+
+now apply the limit of greater then 1000 clause . this is a nested query
+select * from (
+select o.order_id, o.order_date, o.order_status, oi.order_item_subtotal, 
+round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) order_revenue,
+oi.order_item_subtotal/round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) pct_revenue 
+from orders o join order_items oi 
+on o.order_id = oi.order_item_order_id 
+where o.order_status in ('COMPLETE','CLOSED')) q
+where order_revenue >= 1000 
+order by order_date, order_revenue desc;
+
+//analytics functions - ranking 
+
+select * from (
+select o.order_id, o.order_date, o.order_status, oi.order_item_subtotal, 
+round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) order_revenue,
+oi.order_item_subtotal/round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) pct_revenue,
+round(avg(oi.order_item_subtotal) over (partition by o.order_id) , 2) avg_revenue,
+rank() over (partition by o.order_id order by oi.order_item_subtotal desc) rnk_revenue,
+dense_rank() over (partition by o.order_id order by oi.order_item_subtotal desc) den_rnk_revenue,
+percent_rank() over (partition by o.order_id order by oi.order_item_subtotal desc) pct_rnk_revenue,
+row_number() over (partition by o.order_id order by oi.order_item_subtotal desc) rownum_rnk_rev
+from orders o join order_items oi 
+on o.order_id = oi.order_item_order_id 
+where o.order_status in ('COMPLETE','CLOSED')) q
+where order_revenue >= 1000 
+order by order_date, order_revenue desc;
+
+//windowing functions
+
+select * from (
+select o.order_id, o.order_date, o.order_status, oi.order_item_subtotal, 
+round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) order_revenue,
+oi.order_item_subtotal/round(sum(oi.order_item_subtotal) over (partition by o.order_id), 2) pct_revenue,
+round(avg(oi.order_item_subtotal) over (partition by o.order_id) , 2) avg_revenue,
+rank() over (partition by o.order_id order by oi.order_item_subtotal desc) rnk_revenue,
+dense_rank() over (partition by o.order_id order by oi.order_item_subtotal desc) den_rnk_revenue,
+percent_rank() over (partition by o.order_id order by oi.order_item_subtotal desc) pct_rnk_revenue,
+row_number() over (partition by o.order_id order by oi.order_item_subtotal desc) rownum_rnk_rev,
+lead(oi.order_item_subtotal) over (partition by o.order_id order by oi.order_item_subtotal desc) lead_order_item_subtotal,
+lag(oi.order_item_subtotal) over (partition by o.order_id order by oi.order_item_subtotal desc) lag_order_item_subtotal,
+first_value(oi.order_item_subtotal) over (partition by o.order_id order by oi.order_item_subtotal desc) first_order_item_subtotal,
+last_value(oi.order_item_subtotal) over (partition by o.order_id order by oi.order_item_subtotal desc) last_order_item_subtotal
+from orders o join order_items oi 
+on o.order_id = oi.order_item_order_id 
+where o.order_status in ('COMPLETE','CLOSED')) q
+where order_revenue >= 1000 
+order by order_date, order_revenue desc, rnk_revenue;
+
+
+
+// problem create spark sql application - hive context
+
+1- first switch to the database
+sqlContext.sql("use sashish1290_retail_db_orc")
+--> create data frame by loading data from HDFS and register as temp table
+val ordersRDD = sc.textFile("/public/retail_db/orders")
+val ordersDF = ordersRDD.map(order => (order.split(",")(0).toInt, order.split(",")(1), order.split(",")(2).toInt, order.split(",")(3))).toDF("order_id", "order_date", "order_customer-id", "order_status")
+
+ordersDF.registerTempTable("orders")
+sqlContext.sql("select order_status, count(1) count_by_order_status from orders group by order_status").show()
+
+sqlContext.sql("use sashsih1290_retail_db_orc")
+
+--> create data frame by loading data from local file system and register as temp table
+val productsRaw = scala.io.Source.fromFile("/data/retail_db/products/part-00000").getLines.toList
+val productsRDD = sc.parallelize(productsRaw)
+val productsDF = productsRDD.map(product => (product.split(",")(0).toInt , product.split(",")(2))).toDF("product_id", "product_name")
+
+productsDF.registerTempTable("products")
+sqlContext.sql("select * from products").show()
+
+2- now develop a query to get the daily revenue by product only complete and closed status.
+in this query because we are applying aggregate function SUM hence we need to make group by od order_date and product name. before this query run to make the query run faster  we use setconf to take less threads.
+sqlContext.setConf("spark.sql.shuffle.partitions", "2")
+sqlContext.sql("select o.order_date, p.product_name, sum(oi.order_item_subtotal) daily_revenue_per_product " +
+"from orders o join order_items oi " +
+"on o.order_id = oi.order_item_order_id " +
+"join products p on p.product_id = oi.order_item_product_id " +
+"where o.order_status in ('COMPLETE','CLOSED') " +
+"group by o.order_date, p.product_name " +
+"order by o.order_date, daily_revenue_per_product desc").show
+
+3- save data into HDFS and orc file format in hive table
+sqlContext.sql("create database sashish1290_daily_revenue")
+sqlContext.sql("create table sashish1290_daily_revenue.daily_revenue (order_date string , product_name string, daily_revenue_per_product float) stored as orc") 
+
+val daily_revenue_per_product = sqlContext.sql("select o.order_date, p.product_name, sum(oi.order_item_subtotal) daily_revenue_per_product " +
+"from orders o join order_items oi " +
+"on o.order_id = oi.order_item_order_id " +
+"join products p on p.product_id = oi.order_item_product_id " +
+"where o.order_status in ('COMPLETE','CLOSED') " +
+"group by o.order_date, p.product_name " +
+"order by o.order_date, daily_revenue_per_product desc")
+
+daily_revenue_per_product.insertInto("sashish1290_daily_revenue.daily_revenue")
+sqlContext.sql("select * from sashish1290_daily_revenue.daily_revenue").show
+
+// explore some data frame operations
+now lets save this data into my local directory into json format
+daily_revenue_per_product.save("/user/sashish1290/daily_revenue_save", "json")
+
+now directly write into json format
+daily_revenue_per_product.write.json("/user/sashish1290/daily_revenue_write")
+
+now convert from data frame to rdd
+daily_revenue_per_product.rdd
+daily_revenue_per_product.rdd.take(10).foreach(println)
+
+now select 
+daily_revenue_per_product.select("order_date", "daily_revenue_per_product").show()
+
+now filter the data from a particuar date
+daily_revenue_per_product.filter(daily_revenue_per_product("order_date") === "2013-07-25 00:00:00.0").show
+
